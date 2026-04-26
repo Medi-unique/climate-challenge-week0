@@ -3,7 +3,6 @@
   "python.terminal.activateEnvironment": true,
   "python.analysis.extraPaths": ["${workspaceFolder}/src"],
   "jupyter.notebookFileRoot": "${workspaceFolder}",
-  "jupyter.kernels.trusted": true,
   "[python]": {
     "editor.formatOnSave": true
   }
