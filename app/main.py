@@ -5,15 +5,28 @@ from pathlib import Path
 import plotly.express as px
 import streamlit as st
 
-from app.utils import (
-    DEFAULT_COUNTRIES,
-    available_numeric_variables,
-    expected_clean_csv_paths,
-    filter_df,
-    load_clean_csvs,
-    monthly_mean,
-    repo_root,
-)
+try:
+    # When running from repo root (common locally / in notebooks)
+    from app.utils import (
+        DEFAULT_COUNTRIES,
+        available_numeric_variables,
+        expected_clean_csv_paths,
+        filter_df,
+        load_clean_csvs,
+        monthly_mean,
+        repo_root,
+    )
+except ModuleNotFoundError:
+    # When Streamlit runs with `app/` on sys.path (common on some deployments)
+    from utils import (  # type: ignore
+        DEFAULT_COUNTRIES,
+        available_numeric_variables,
+        expected_clean_csv_paths,
+        filter_df,
+        load_clean_csvs,
+        monthly_mean,
+        repo_root,
+    )
 
 
 st.set_page_config(page_title="Climate cross-country dashboard", layout="wide")
