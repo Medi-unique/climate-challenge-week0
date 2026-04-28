@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 import re
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
-
-
-@dataclass(frozen=True)
-class LoadResult:
-    df: pd.DataFrame
-    missing_files: list[str]
-
 
 DEFAULT_COUNTRIES: list[str] = ["Ethiopia", "Kenya", "Sudan", "Tanzania", "Nigeria"]
 
@@ -65,7 +57,6 @@ def try_download_clean_csvs_from_gdrive(data_dir: Path) -> bool:
     try:
         folder_id = _extract_gdrive_folder_id(folder)
     except ValueError:
-        # If parsing fails, don't attempt download (caller can surface message)
         return False
 
     try:
@@ -78,7 +69,10 @@ def try_download_clean_csvs_from_gdrive(data_dir: Path) -> bool:
 
     # gdown will create a subfolder by default; we download into data_dir and then
     # rely on expected filenames to be present (either directly or within one level).
-    gdown.download_folder(url=url, output=str(data_dir), quiet=True, use_cookies=False)
+    try:
+        gdown.download_folder(url=url, output=str(data_dir), quiet=True, use_cookies=False)
+    except Exception:
+        return False
 
     # If files landed inside a child folder, move any *_clean.csv up one level.
     for p in list(data_dir.rglob("*_clean.csv")):
@@ -95,9 +89,27 @@ def try_download_clean_csvs_from_gdrive(data_dir: Path) -> bool:
     return any((data_dir / f"{c.lower()}_clean.csv").is_file() for c in DEFAULT_COUNTRIES)
 
 
+def gdrive_diagnostics(data_dir: Path) -> dict:
+    """
+    Small diagnostics payload to help debug Streamlit Cloud deployments.
+    Never includes file contents.
+    """
+    folder = os.getenv(GDRIVE_FOLDER_ENV, "").strip()
+    files = sorted([p.name for p in data_dir.rglob("*.csv")]) if data_dir.exists() else []
+    expected = [f"{c.lower()}_clean.csv" for c in DEFAULT_COUNTRIES]
+    present = {name: (data_dir / name).is_file() for name in expected}
+    return {
+        "env_set": bool(folder),
+        "env_value_prefix": (folder[:40] + "...") if folder else "",
+        "data_dir": str(data_dir),
+        "csv_files_found": files[:50],
+        "expected_present": present,
+    }
+
+
 def load_clean_csvs(
     paths_by_country: dict[str, Path],
-) -> LoadResult:
+) -> tuple[pd.DataFrame, list[str]]:
     frames: list[pd.DataFrame] = []
     missing: list[str] = []
 
@@ -124,13 +136,64 @@ def load_clean_csvs(
 
     if not frames:
         empty = pd.DataFrame(columns=["Country", "date"])
-        return LoadResult(df=empty, missing_files=missing)
+        return empty, missing
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.dropna(subset=["date"])
     combined["Year"] = combined["date"].dt.year.astype(int)
     combined["Month"] = combined["date"].dt.to_period("M").dt.to_timestamp()
-    return LoadResult(df=combined, missing_files=missing)
+    return combined, missing
+
+
+def _country_from_filename(name: str) -> str:
+    base = Path(name).name
+    base = re.sub(r"\.csv$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"_clean$", "", base, flags=re.IGNORECASE)
+    base = base.replace("-", " ").replace("_", " ").strip()
+    return base.title() if base else "Unknown"
+
+
+def load_clean_csv_uploads(
+    uploaded_files: Iterable[object],
+) -> pd.DataFrame:
+    """
+    Load one or more "clean" CSVs from Streamlit uploads.
+
+    Each upload is expected to contain either:
+    - a `date` column, or
+    - `YEAR` + `DOY` columns (NASA POWER style).
+    """
+    frames: list[pd.DataFrame] = []
+
+    for f in uploaded_files:
+        # Streamlit's UploadedFile has `.name` and is file-like.
+        name = getattr(f, "name", "uploaded.csv")
+        df = pd.read_csv(f)
+
+        if "Country" not in df.columns or df["Country"].astype(str).str.strip().eq("").all():
+            df["Country"] = _country_from_filename(str(name))
+
+        df["Country"] = df["Country"].astype(str)
+
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        elif {"YEAR", "DOY"}.issubset(df.columns):
+            y = df["YEAR"].astype(int).astype(str)
+            d = df["DOY"].astype(int).astype(str).str.zfill(3)
+            df["date"] = pd.to_datetime(y + d, format="%Y%j", errors="coerce")
+        else:
+            raise ValueError(f"Upload '{name}' has no 'date' and no YEAR+DOY columns.")
+
+        frames.append(df)
+
+    if not frames:
+        return pd.DataFrame(columns=["Country", "date"])
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.dropna(subset=["date"])
+    combined["Year"] = combined["date"].dt.year.astype(int)
+    combined["Month"] = combined["date"].dt.to_period("M").dt.to_timestamp()
+    return combined
 
 
 def available_numeric_variables(df: pd.DataFrame) -> list[str]:
