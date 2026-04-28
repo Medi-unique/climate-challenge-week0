@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import plotly.express as px
 import streamlit as st
+
+# Ensure repo root is on sys.path (Streamlit Cloud sometimes runs with `app/` as cwd).
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 try:
     # When running from repo root (common locally / in notebooks)
@@ -43,8 +49,8 @@ def _load() -> tuple[object, list[str]]:
     root = repo_root()
     data_dir = root / "data"
     paths = expected_clean_csv_paths(data_dir, DEFAULT_COUNTRIES)
-    res = load_clean_csvs(paths)
-    return res.df, res.missing_files
+    df, missing = load_clean_csvs(paths)
+    return df, missing
 
 
 df, missing = _load()

@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 import re
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Iterable
 
 import pandas as pd
-
-
-@dataclass(frozen=True)
-class LoadResult:
-    df: pd.DataFrame
-    missing_files: list[str]
-
 
 DEFAULT_COUNTRIES: list[str] = ["Ethiopia", "Kenya", "Sudan", "Tanzania", "Nigeria"]
 
@@ -117,7 +109,7 @@ def gdrive_diagnostics(data_dir: Path) -> dict:
 
 def load_clean_csvs(
     paths_by_country: dict[str, Path],
-) -> LoadResult:
+) -> tuple[pd.DataFrame, list[str]]:
     frames: list[pd.DataFrame] = []
     missing: list[str] = []
 
@@ -144,13 +136,13 @@ def load_clean_csvs(
 
     if not frames:
         empty = pd.DataFrame(columns=["Country", "date"])
-        return LoadResult(df=empty, missing_files=missing)
+        return empty, missing
 
     combined = pd.concat(frames, ignore_index=True)
     combined = combined.dropna(subset=["date"])
     combined["Year"] = combined["date"].dt.year.astype(int)
     combined["Month"] = combined["date"].dt.to_period("M").dt.to_timestamp()
-    return LoadResult(df=combined, missing_files=missing)
+    return combined, missing
 
 
 def available_numeric_variables(df: pd.DataFrame) -> list[str]:
