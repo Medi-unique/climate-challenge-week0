@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import os
 import re
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional, Tuple
 
 import pandas as pd
 
@@ -65,7 +65,6 @@ def try_download_clean_csvs_from_gdrive(data_dir: Path) -> bool:
     try:
         folder_id = _extract_gdrive_folder_id(folder)
     except ValueError:
-        # If parsing fails, don't attempt download (caller can surface message)
         return False
 
     try:
@@ -78,7 +77,10 @@ def try_download_clean_csvs_from_gdrive(data_dir: Path) -> bool:
 
     # gdown will create a subfolder by default; we download into data_dir and then
     # rely on expected filenames to be present (either directly or within one level).
-    gdown.download_folder(url=url, output=str(data_dir), quiet=True, use_cookies=False)
+    try:
+        gdown.download_folder(url=url, output=str(data_dir), quiet=True, use_cookies=False)
+    except Exception:
+        return False
 
     # If files landed inside a child folder, move any *_clean.csv up one level.
     for p in list(data_dir.rglob("*_clean.csv")):
@@ -93,6 +95,24 @@ def try_download_clean_csvs_from_gdrive(data_dir: Path) -> bool:
 
     # Success if we now have at least one expected file
     return any((data_dir / f"{c.lower()}_clean.csv").is_file() for c in DEFAULT_COUNTRIES)
+
+
+def gdrive_diagnostics(data_dir: Path) -> dict:
+    """
+    Small diagnostics payload to help debug Streamlit Cloud deployments.
+    Never includes file contents.
+    """
+    folder = os.getenv(GDRIVE_FOLDER_ENV, "").strip()
+    files = sorted([p.name for p in data_dir.rglob("*.csv")]) if data_dir.exists() else []
+    expected = [f"{c.lower()}_clean.csv" for c in DEFAULT_COUNTRIES]
+    present = {name: (data_dir / name).is_file() for name in expected}
+    return {
+        "env_set": bool(folder),
+        "env_value_prefix": (folder[:40] + "...") if folder else "",
+        "data_dir": str(data_dir),
+        "csv_files_found": files[:50],
+        "expected_present": present,
+    }
 
 
 def load_clean_csvs(

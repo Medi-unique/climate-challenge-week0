@@ -52,9 +52,17 @@ df, missing = _load()
 if missing:
     # Optional: try pulling the cleaned CSVs from a public Google Drive folder on Cloud.
     try:
-        from app.utils import try_download_clean_csvs_from_gdrive, GDRIVE_FOLDER_ENV  # type: ignore
+        from app.utils import (  # type: ignore
+            try_download_clean_csvs_from_gdrive,
+            gdrive_diagnostics,
+            GDRIVE_FOLDER_ENV,
+        )
     except Exception:
-        from utils import try_download_clean_csvs_from_gdrive, GDRIVE_FOLDER_ENV  # type: ignore
+        from utils import (  # type: ignore
+            try_download_clean_csvs_from_gdrive,
+            gdrive_diagnostics,
+            GDRIVE_FOLDER_ENV,
+        )
 
     root = repo_root()
     data_dir = root / "data"
@@ -66,6 +74,13 @@ if missing:
         )
         st.cache_data.clear()
         df, missing = _load()
+    else:
+        st.info(
+            "Google Drive download did not run or did not produce the expected files. "
+            f"Set `{GDRIVE_FOLDER_ENV}` in Streamlit Secrets to enable it."
+        )
+        with st.expander("Google Drive diagnostics"):
+            st.json(gdrive_diagnostics(data_dir))
 
     st.warning(
         "Missing cleaned CSVs (expected locally, not committed):\n\n"
