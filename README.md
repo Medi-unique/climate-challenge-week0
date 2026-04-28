@@ -75,7 +75,30 @@ With data files present:
 streamlit run app/main.py
 ```
 
+The app expects these local (gitignored) files:
+
+- `data/ethiopia_clean.csv`
+- `data/kenya_clean.csv`
+- `data/sudan_clean.csv`
+- `data/tanzania_clean.csv`
+- `data/nigeria_clean.csv`
+
+Dashboard features:
+
+- Country **multi-select** filter
+- **Year range** slider
+- **Variable selector** (monthly mean line chart; defaults to `T2M`)
+- `PRECTOTCORR` **distribution boxplot** (log-scaled)
+
 Deployment: push to GitHub and connect the repo on [Streamlit Community Cloud](https://streamlit.io/cloud). Set the main file to `app/main.py`. **Secrets / data:** keep CSVs out of the repo; for a public demo, upload a private copy to Cloud secrets or use a release artifact per Streamlit docs.
+
+Google Drive option (Streamlit Cloud):
+
+- Upload the five `*_clean.csv` files into a single Google Drive folder.
+- Share the folder as **Anyone with the link** (Viewer).
+- In Streamlit Cloud → App → **Settings → Secrets**, set:
+  - `GDRIVE_FOLDER_URL="https://drive.google.com/drive/folders/<your-folder-id>"`
+- The app will download the CSVs into `data/` at runtime (still not committed to git).
 
 Optional screenshot folder: `dashboard_screenshots/` (commit PNGs only).
 
