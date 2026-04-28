@@ -50,6 +50,23 @@ def _load() -> tuple[object, list[str]]:
 df, missing = _load()
 
 if missing:
+    # Optional: try pulling the cleaned CSVs from a public Google Drive folder on Cloud.
+    try:
+        from app.utils import try_download_clean_csvs_from_gdrive, GDRIVE_FOLDER_ENV  # type: ignore
+    except Exception:
+        from utils import try_download_clean_csvs_from_gdrive, GDRIVE_FOLDER_ENV  # type: ignore
+
+    root = repo_root()
+    data_dir = root / "data"
+    downloaded = try_download_clean_csvs_from_gdrive(data_dir)
+    if downloaded:
+        st.info(
+            "Downloaded cleaned CSVs from Google Drive (env: "
+            f"`{GDRIVE_FOLDER_ENV}`) — reloading data."
+        )
+        st.cache_data.clear()
+        df, missing = _load()
+
     st.warning(
         "Missing cleaned CSVs (expected locally, not committed):\n\n"
         + "\n".join(f"- `{m}`" for m in missing)
