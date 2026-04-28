@@ -145,6 +145,57 @@ def load_clean_csvs(
     return combined, missing
 
 
+def _country_from_filename(name: str) -> str:
+    base = Path(name).name
+    base = re.sub(r"\.csv$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"_clean$", "", base, flags=re.IGNORECASE)
+    base = base.replace("-", " ").replace("_", " ").strip()
+    return base.title() if base else "Unknown"
+
+
+def load_clean_csv_uploads(
+    uploaded_files: Iterable[object],
+) -> pd.DataFrame:
+    """
+    Load one or more "clean" CSVs from Streamlit uploads.
+
+    Each upload is expected to contain either:
+    - a `date` column, or
+    - `YEAR` + `DOY` columns (NASA POWER style).
+    """
+    frames: list[pd.DataFrame] = []
+
+    for f in uploaded_files:
+        # Streamlit's UploadedFile has `.name` and is file-like.
+        name = getattr(f, "name", "uploaded.csv")
+        df = pd.read_csv(f)
+
+        if "Country" not in df.columns or df["Country"].astype(str).str.strip().eq("").all():
+            df["Country"] = _country_from_filename(str(name))
+
+        df["Country"] = df["Country"].astype(str)
+
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        elif {"YEAR", "DOY"}.issubset(df.columns):
+            y = df["YEAR"].astype(int).astype(str)
+            d = df["DOY"].astype(int).astype(str).str.zfill(3)
+            df["date"] = pd.to_datetime(y + d, format="%Y%j", errors="coerce")
+        else:
+            raise ValueError(f"Upload '{name}' has no 'date' and no YEAR+DOY columns.")
+
+        frames.append(df)
+
+    if not frames:
+        return pd.DataFrame(columns=["Country", "date"])
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined = combined.dropna(subset=["date"])
+    combined["Year"] = combined["date"].dt.year.astype(int)
+    combined["Month"] = combined["date"].dt.to_period("M").dt.to_timestamp()
+    return combined
+
+
 def available_numeric_variables(df: pd.DataFrame) -> list[str]:
     exclude = {"YEAR", "DOY", "Month", "Year"}
     cols = [

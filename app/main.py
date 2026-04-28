@@ -3,8 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import plotly.express as px
 import streamlit as st
+
+try:
+    import plotly.express as px  # type: ignore
+except Exception:  # pragma: no cover
+    px = None
 
 # Ensure repo root is on sys.path (Streamlit Cloud sometimes runs with `app/` as cwd).
 _ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +23,7 @@ try:
         expected_clean_csv_paths,
         filter_df,
         load_clean_csvs,
+        load_clean_csv_uploads,
         monthly_mean,
         repo_root,
     )
@@ -30,6 +35,7 @@ except ModuleNotFoundError:
         expected_clean_csv_paths,
         filter_df,
         load_clean_csvs,
+        load_clean_csv_uploads,
         monthly_mean,
         repo_root,
     )
@@ -39,8 +45,19 @@ st.set_page_config(page_title="Climate cross-country dashboard", layout="wide")
 
 st.title("Cross-country climate dashboard (Week 0)")
 st.caption(
-    "Reads local cleaned CSVs from `data/<country>_clean.csv` (gitignored). "
-    "Use this to explore temperature and precipitation patterns across countries."
+    "Upload one or more cleaned CSVs, or (optionally) load them from `data/<country>_clean.csv` "
+    "when running locally. Use this to explore temperature and precipitation patterns across countries."
+)
+
+st.sidebar.header("Data source")
+uploaded_files = st.sidebar.file_uploader(
+    "Upload cleaned CSV file(s)",
+    type=["csv"],
+    accept_multiple_files=True,
+    help=(
+        "Upload one or more `*_clean.csv` files. Each CSV must have either a `date` column, "
+        "or `YEAR` + `DOY`. A `Country` column is optional (it can be inferred from the filename)."
+    ),
 )
 
 
@@ -55,7 +72,15 @@ def _load() -> tuple[object, list[str]]:
 
 df, missing = _load()
 
-if missing:
+if uploaded_files:
+    try:
+        df = load_clean_csv_uploads(uploaded_files)
+        missing = []
+    except Exception as e:
+        st.error(f"Could not read uploaded CSV(s): {e}")
+        st.stop()
+
+if missing and not uploaded_files:
     # Optional: try pulling the cleaned CSVs from a public Google Drive folder on Cloud.
     try:
         from app.utils import (  # type: ignore
@@ -94,6 +119,7 @@ if missing:
     )
 
 if df.empty:
+    st.info("No data loaded yet. Upload cleaned CSV file(s) from the sidebar to begin.")
     st.stop()
 
 all_years = sorted(df["Year"].dropna().unique().tolist())
@@ -126,32 +152,42 @@ with col1:
     if mm.empty:
         st.info("No data for current filters.")
     else:
-        fig = px.line(
-            mm,
-            x="date",
-            y="value",
-            color="Country",
-            markers=False,
-            title=f"Monthly mean {var} ({year_range[0]}–{year_range[1]})",
-        )
-        fig.update_layout(legend_title_text="Country", margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        if px is None:
+            st.line_chart(mm, x="date", y="value", color="Country", use_container_width=True)
+        else:
+            fig = px.line(
+                mm,
+                x="date",
+                y="value",
+                color="Country",
+                markers=False,
+                title=f"Monthly mean {var} ({year_range[0]}–{year_range[1]})",
+            )
+            fig.update_layout(legend_title_text="Country", margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig, use_container_width=True)
 
 with col2:
     st.subheader("Precipitation distribution (daily)")
     if "PRECTOTCORR" not in filtered.columns:
         st.info("`PRECTOTCORR` not found in the loaded data.")
     else:
-        fig = px.box(
-            filtered,
-            x="Country",
-            y="PRECTOTCORR",
-            points="outliers",
-            title=f"Daily PRECTOTCORR distribution ({year_range[0]}–{year_range[1]})",
-        )
-        fig.update_yaxes(type="log", title="PRECTOTCORR (mm/day, log scale)")
-        fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        if px is None:
+            st.bar_chart(
+                filtered.groupby("Country", observed=True)["PRECTOTCORR"].median().sort_values(),
+                use_container_width=True,
+            )
+            st.caption("Plotly not installed; showing median PRECTOTCORR by country.")
+        else:
+            fig = px.box(
+                filtered,
+                x="Country",
+                y="PRECTOTCORR",
+                points="outliers",
+                title=f"Daily PRECTOTCORR distribution ({year_range[0]}–{year_range[1]})",
+            )
+            fig.update_yaxes(type="log", title="PRECTOTCORR (mm/day, log scale)")
+            fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig, use_container_width=True)
 
 
 st.divider()
